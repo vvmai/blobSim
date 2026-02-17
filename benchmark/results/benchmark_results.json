@@ -1,0 +1,281 @@
+{
+  "timestamp": "2026-02-17T03:08:35.134768+00:00",
+  "all_passed": true,
+  "results": [
+    {
+      "id": "B2a",
+      "passed": true,
+      "predicted": 186.16,
+      "observed_mean": 185.9,
+      "observed_values": [
+        180,
+        185,
+        190,
+        195
+      ],
+      "tolerance": 3.0,
+      "elapsed_s": 0.5
+    },
+    {
+      "id": "SC1",
+      "passed": true,
+      "n_trials": 10,
+      "extinctions": 10,
+      "t_max": 8100,
+      "extinction_steps": [
+        32,
+        32,
+        32,
+        32,
+        33,
+        34,
+        34,
+        35,
+        35,
+        36
+      ],
+      "mean_extinction": 33.5,
+      "conservation_ok": 10,
+      "detail": {
+        "all_extinct": true,
+        "all_conserved": true
+      },
+      "elapsed_s": 2.2
+    },
+    {
+      "id": "SC4",
+      "passed": true,
+      "n_trials": 5,
+      "e_initial": 9005.0,
+      "pop_bound": 18010.0,
+      "detail": {
+        "all_reproduced": true,
+        "all_extinct": true,
+        "all_bounded": true,
+        "all_conserved": true
+      },
+      "trials": [
+        {
+          "seed": 4000,
+          "peak_pop": 900,
+          "extinct": true,
+          "extinction_step": 123,
+          "reproduced": true,
+          "pop_within_bound": true,
+          "max_residual": 1.8189894035458565e-11,
+          "conserved": true
+        },
+        {
+          "seed": 4001,
+          "peak_pop": 900,
+          "extinct": true,
+          "extinction_step": 121,
+          "reproduced": true,
+          "pop_within_bound": true,
+          "max_residual": 1.8189894035458565e-11,
+          "conserved": true
+        },
+        {
+          "seed": 4002,
+          "peak_pop": 900,
+          "extinct": true,
+          "extinction_step": 120,
+          "reproduced": true,
+          "pop_within_bound": true,
+          "max_residual": 1.8189894035458565e-11,
+          "conserved": true
+        },
+        {
+          "seed": 4003,
+          "peak_pop": 900,
+          "extinct": true,
+          "extinction_step": 124,
+          "reproduced": true,
+          "pop_within_bound": true,
+          "max_residual": 1.8189894035458565e-11,
+          "conserved": true
+        },
+        {
+          "seed": 4004,
+          "peak_pop": 900,
+          "extinct": true,
+          "extinction_step": 121,
+          "reproduced": true,
+          "pop_within_bound": true,
+          "max_residual": 1.8189894035458565e-11,
+          "conserved": true
+        }
+      ],
+      "elapsed_s": 18.7
+    },
+    {
+      "id": "SC5",
+      "passed": true,
+      "n_trials": 5,
+      "n_steps": 2000,
+      "n_star": 105.9,
+      "convergence_tol": 0.3,
+      "analytical_tol": 0.5,
+      "detail": {
+        "all_converged": true,
+        "all_near_nstar": true,
+        "all_alive": true
+      },
+      "trials": [
+        {
+          "seed": 5000,
+          "mean_sparse": 132.0,
+          "mean_dense": 130.6,
+          "relative_diff": 0.011,
+          "converged": true,
+          "sparse_near_nstar": true,
+          "dense_near_nstar": true,
+          "sparse_alive": true,
+          "dense_alive": true
+        },
+        {
+          "seed": 5001,
+          "mean_sparse": 136.3,
+          "mean_dense": 133.2,
+          "relative_diff": 0.023,
+          "converged": true,
+          "sparse_near_nstar": true,
+          "dense_near_nstar": true,
+          "sparse_alive": true,
+          "dense_alive": true
+        },
+        {
+          "seed": 5002,
+          "mean_sparse": 129.7,
+          "mean_dense": 134.5,
+          "relative_diff": 0.036,
+          "converged": true,
+          "sparse_near_nstar": true,
+          "dense_near_nstar": true,
+          "sparse_alive": true,
+          "dense_alive": true
+        },
+        {
+          "seed": 5003,
+          "mean_sparse": 133.9,
+          "mean_dense": 134.5,
+          "relative_diff": 0.004,
+          "converged": true,
+          "sparse_near_nstar": true,
+          "dense_near_nstar": true,
+          "sparse_alive": true,
+          "dense_alive": true
+        },
+        {
+          "seed": 5004,
+          "mean_sparse": 133.2,
+          "mean_dense": 136.0,
+          "relative_diff": 0.021,
+          "converged": true,
+          "sparse_near_nstar": true,
+          "dense_near_nstar": true,
+          "sparse_alive": true,
+          "dense_alive": true
+        }
+      ],
+      "elapsed_s": 273.8
+    },
+    {
+      "id": "SC6",
+      "passed": true,
+      "n_trials": 10,
+      "n_steps": 500,
+      "max_energy": 20.0,
+      "energy_tol": 1.0,
+      "variance_tol": 1.0,
+      "detail": {
+        "all_alive": true,
+        "all_near_max": true,
+        "all_stable": true
+      },
+      "trials": [
+        {
+          "seed": 6000,
+          "alive_at_end": true,
+          "mean_energy_tail": 20.0,
+          "energy_var_tail": 0.0,
+          "near_max": true,
+          "stable": true
+        },
+        {
+          "seed": 6001,
+          "alive_at_end": true,
+          "mean_energy_tail": 20.0,
+          "energy_var_tail": 0.0,
+          "near_max": true,
+          "stable": true
+        },
+        {
+          "seed": 6002,
+          "alive_at_end": true,
+          "mean_energy_tail": 20.0,
+          "energy_var_tail": 0.0,
+          "near_max": true,
+          "stable": true
+        },
+        {
+          "seed": 6003,
+          "alive_at_end": true,
+          "mean_energy_tail": 20.0,
+          "energy_var_tail": 0.0,
+          "near_max": true,
+          "stable": true
+        },
+        {
+          "seed": 6004,
+          "alive_at_end": true,
+          "mean_energy_tail": 20.0,
+          "energy_var_tail": 0.0,
+          "near_max": true,
+          "stable": true
+        },
+        {
+          "seed": 6005,
+          "alive_at_end": true,
+          "mean_energy_tail": 20.0,
+          "energy_var_tail": 0.0,
+          "near_max": true,
+          "stable": true
+        },
+        {
+          "seed": 6006,
+          "alive_at_end": true,
+          "mean_energy_tail": 20.0,
+          "energy_var_tail": 0.0,
+          "near_max": true,
+          "stable": true
+        },
+        {
+          "seed": 6007,
+          "alive_at_end": true,
+          "mean_energy_tail": 20.0,
+          "energy_var_tail": 0.0,
+          "near_max": true,
+          "stable": true
+        },
+        {
+          "seed": 6008,
+          "alive_at_end": true,
+          "mean_energy_tail": 20.0,
+          "energy_var_tail": 0.0,
+          "near_max": true,
+          "stable": true
+        },
+        {
+          "seed": 6009,
+          "alive_at_end": true,
+          "mean_energy_tail": 20.0,
+          "energy_var_tail": 0.0,
+          "near_max": true,
+          "stable": true
+        }
+      ],
+      "elapsed_s": 0.4
+    }
+  ]
+}

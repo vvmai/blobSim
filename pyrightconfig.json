@@ -1,0 +1,11 @@
+{
+  "include": ["blobsim", "main.py", "tests"],
+  "pythonVersion": "3.12",
+  "pythonPlatform": "Darwin",
+  "executionEnvironments": [
+    {
+      "root": ".",
+      "extraPaths": ["."]
+    }
+  ]
+}

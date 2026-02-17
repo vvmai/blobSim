@@ -1,0 +1,27 @@
+languages:
+- python
+
+encoding: "utf-8"
+
+ignore_all_files_in_gitignore: true
+
+ignored_paths:
+- "__pycache__"
+- ".pytest_cache"
+- ".ruff_cache"
+
+read_only: false
+
+excluded_tools: []
+
+initial_prompt: ""
+
+project_name: "gol"
+
+included_optional_tools: []
+
+base_modes:
+
+default_modes:
+
+fixed_tools: []
