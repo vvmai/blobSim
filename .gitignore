@@ -8,3 +8,7 @@ __pycache__/
 dist/
 build/
 .DS_Store
+.serena
+.claude
+docs/
+pyrightconfig.json
