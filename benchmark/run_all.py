@@ -12,6 +12,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from benchmark.b2a_single_lifespan import run as run_b2a
+from benchmark.c2_extinction_boundary import run as run_c2
+from benchmark.c3_competitive_exclusion import run as run_c3
 from benchmark.sc1_decay_extinction import run as run_sc1
 from benchmark.sc4_reproduction_extinction import run as run_sc4
 from benchmark.sc5_carrying_capacity import run as run_sc5
@@ -25,6 +27,8 @@ BENCHMARKS: list[tuple[str, Callable[[], dict]]] = [
     ("SC4", run_sc4),
     ("SC5", run_sc5),
     ("SC6", run_sc6),
+    ("C2", run_c2),
+    ("C3", run_c3),
 ]
 
 RESULTS_PATH = Path("benchmark/results/benchmark_results.json")

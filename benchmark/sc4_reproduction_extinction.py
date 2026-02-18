@@ -26,7 +26,7 @@ from benchmark.initial_conditions import ic_fertile_decay
 BASE_SEED = 4000
 N_TRIALS = 5
 OFFSPRING_ENERGY = 0.5
-M = 0.1
+M = 0.4
 
 # E_initial = 5 blobs * 1.0 + 900 cells * 10.0 = 9005.0
 GRID_SIZE = 30

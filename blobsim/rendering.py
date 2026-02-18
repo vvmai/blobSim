@@ -16,6 +16,8 @@ from matplotlib.cm import get_cmap
 from matplotlib.figure import Figure
 from PIL import Image
 
+from blobsim.config import SimulationConfig
+
 if TYPE_CHECKING:
     from blobsim.simulation import SimulationResult
     from blobsim.types import BlobRecord, LedgerSnapshot
@@ -35,6 +37,7 @@ def render_gif(
     fps: int = 10,
     dpi: int = 72,
     cell_pixels: int = 12,
+    sample_every: int = 1,
 ) -> Path:
     """Render simulation history to an animated GIF.
 
@@ -50,6 +53,8 @@ def render_gif(
         Figure resolution (default 72).
     cell_pixels : int
         Pixels per grid cell (default 12).
+    sample_every : int
+        Render every Nth frame (default 1 = all frames).
 
     Returns
     -------
@@ -69,9 +74,12 @@ def render_gif(
         default=1.0,
     )
 
+    # Compact config annotation
+    info_lines = _build_info_lines(result.config)
+
     # Generator — yields RGBA frames, never accumulates
     def frames() -> Iterator[np.ndarray]:
-        for t in range(len(recorder.blob_records)):
+        for t in range(0, len(recorder.blob_records), sample_every):
             yield _render_frame(
                 recorder.grid_records[t],
                 recorder.blob_records[t],
@@ -81,6 +89,7 @@ def render_gif(
                 grid_vmax,
                 dpi,
                 cell_pixels,
+                info_lines,
             )
 
     path = Path(output_path) if output_path else Path(f"blobsim_{int(time.time())}.gif")
@@ -95,6 +104,27 @@ def _build_palette(species_names: set[str]) -> dict[str, tuple[float, ...]]:
     return {name: cmap(i % 10) for i, name in enumerate(sorted(species_names))}
 
 
+def _build_info_lines(config: SimulationConfig) -> list[str]:
+    """Extract compact config annotation strings."""
+    lines: list[str] = []
+
+    # Environment info
+    env = config.environment
+    if hasattr(env, "rate"):
+        lines.append(f"grid:{config.grid_size} regen(r={env.rate},cap={env.capacity})")
+    else:
+        lines.append(f"grid:{config.grid_size} decay(e0={env.initial_cell_energy})")
+
+    # Per-species summary
+    for sc in config.species:
+        a = sc.attributes
+        lines.append(
+            f"{a.species}(n={sc.count},bmr={a.base_metabolic_cost},max_e={a.max_energy})"
+        )
+
+    return lines
+
+
 def _render_frame(
     grid: np.ndarray | None,
     blob_records: list[BlobRecord],
@@ -104,13 +134,19 @@ def _render_frame(
     grid_vmax: float,
     dpi: int,
     cell_pixels: int,
+    info_lines: list[str] | None = None,
 ) -> np.ndarray:
     """Render a single simulation step to an RGBA numpy array."""
     fig_w = grid_size * cell_pixels / dpi
     fig_h = fig_w  # square
-    fig = Figure(figsize=(fig_w + 0.8, fig_h + 0.6), dpi=dpi, facecolor="black")
+    n_info = len(info_lines) if info_lines else 0
+    info_h = 0.13 * n_info
+    total_h = fig_h + 0.55 + info_h
+    total_w = fig_w + 1.0
+    fig = Figure(figsize=(total_w, total_h), dpi=dpi, facecolor="black")
     canvas = FigureCanvasAgg(fig)
-    ax = fig.add_axes((0.08, 0.08, fig_w / (fig_w + 0.8), fig_h / (fig_h + 0.6)))
+    ax_bottom = info_h / total_h + 0.02
+    ax = fig.add_axes((0.08, ax_bottom, fig_w / total_w, fig_h / total_h))
 
     # Grid heatmap
     if grid is not None:
@@ -118,7 +154,11 @@ def _render_frame(
             grid, cmap=GRID_CMAP, vmin=0, vmax=grid_vmax,
             origin="lower", interpolation="nearest",
         )
-        fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04, label="Grid energy")
+        cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.0)
+        cbar.set_ticks([0, grid_vmax])
+        cbar.set_ticklabels(["0", f"{grid_vmax:.1f}"])
+        cbar.ax.tick_params(labelsize=9, colors="white")
+        cbar.set_label("Grid energy", color="white", fontsize=9)
     else:
         ax.imshow(
             np.zeros((grid_size, grid_size)), cmap="Greys", vmin=0, vmax=1,
@@ -156,6 +196,14 @@ def _render_frame(
         f"Step {ledger.step} | Alive: {ledger.n_alive}",
         color="white", fontsize=9, pad=4,
     )
+
+    # Config annotation
+    if info_lines:
+        fig.text(
+            0.08, 0.01, "\n".join(info_lines),
+            color="white", fontsize=9, alpha=0.7,
+            verticalalignment="bottom", family="monospace",
+        )
 
     canvas.draw()
     buf = np.asarray(canvas.buffer_rgba()).copy()

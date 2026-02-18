@@ -4,7 +4,7 @@
 
 | Test | Type | Prediction | Observed | Verdict |
 | ---- | ---- | ---------- | -------- | ------- |
-| B2a | Calibration | E[tau]=186.16 | mean=185.9 | Centered on prediction |
+| B2a | Calibration | E[tau]=186.16 | mean=185.9 | Within tolerance |
 | SC-1 | Convergence | Extinction guaranteed | 10/10 extinct, mean step=33.5 | All extinct, conservation OK |
 | SC-4 | Convergence | Boom then extinction | peak=900, extinct ~step 122 | Reproduction + extinction + conservation |
 | SC-5 | Convergence | N*=105.9 | sparse ~133, dense ~134 | Converged (1-4% diff), within 50% of N* |
@@ -32,7 +32,7 @@ All trials show identical pattern: population explodes to grid capacity (900 = 3
 
 5 trials x 2 runs (sparse=10, dense=300), 2000 steps each. Analytical N*=105.9.
 
-Both sparse and dense runs converge to ~130-136 (25% above N*). Relative difference between sparse and dense means: 0.4-3.6% — excellent convergence. The systematic upward bias from N* reflects mean-field approximation error: spatial correlations reduce effective dissipation (blobs cluster less than predicted, so fewer failed claims, so less wasted energy).
+Both sparse and dense runs converge to ~130-136 (25% above N*). Relative difference between sparse and dense means: 0.4-3.6% — strong convergence. The observed population is consistently ~25% above predicted N*. The uniform-mixing model overestimates energy waste: in practice, blobs spread more evenly than assumed, so fewer actions fail due to collisions.
 
 Slowest benchmark (273.8s) due to high per-step blob count over 2000 steps.
 

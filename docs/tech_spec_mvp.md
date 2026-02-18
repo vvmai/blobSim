@@ -25,9 +25,9 @@
 
 ## 1. Context
 
-Clean-slate cellular automaton on a 2D toroidal grid. Entities ("blobs") have individual energy, pluggable behavior (rules engines), and modular action sets. Grid environment evolves independently via pluggable functions. Core invariant: energy conservation — all tests derive from it.
+Cellular automaton on a 2D toroidal grid. Entities ("blobs") have individual energy, pluggable behavior (rules engines), and modular action sets. Grid environment evolves independently via pluggable functions. Core invariant: energy conservation — all tests derive from it.
 
-**Decision**: Custom NumPy implementation. No ABM framework. Rationale: domain-specific conflict resolution, energy ledger, per-blob RNG — no framework handles these out-of-box. ~500-800 LOC for core engine.
+**Decision**: Custom NumPy implementation. No ABM framework. Rationale: domain-specific conflict resolution, energy ledger, per-blob RNG. ~500-800 LOC for core engine.
 
 ---
 
