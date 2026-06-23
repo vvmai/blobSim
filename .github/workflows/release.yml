@@ -1,0 +1,28 @@
+name: release-wheel
+
+# Build the pure-Python wheel and attach it to a GitHub Release whenever a
+# version tag is pushed (e.g. `git tag v0.1.0 && git push origin v0.1.0`).
+# The Pages site installs that wheel via micropip from the release asset URL.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade build
+      - run: python -m build --wheel
+      - name: Attach wheel to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.whl

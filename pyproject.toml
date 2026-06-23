@@ -1,0 +1,32 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "blobsim"
+version = "0.1.0"
+description = "Cellular automaton on a 2D toroidal grid with energy-conserving blob agents"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = ["numpy"]
+
+[project.optional-dependencies]
+# Gif/figure rendering. Excluded from the pyodide path -- matplotlib/PIL are
+# isolated to blobsim.rendering and never pulled by `import blobsim`.
+render = ["matplotlib", "pillow"]
+
+[project.urls]
+Homepage = "https://github.com/vvmai/gol"
+
+[tool.hatch.build.targets.wheel]
+# Ship the core package, species plugins, and benchmark scenarios (numpy-only,
+# so they run under pyodide). benchmark_results.json rides along as package
+# data so the wheel is self-contained.
+packages = ["blobsim", "benchmark"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"benchmark/results/benchmark_results.json" = "benchmark/results/benchmark_results.json"
+
+[tool.hatch.build]
+# Keep gifs and rendering-time artifacts out of the wheel.
+exclude = ["*.gif", "benchmark/gifs/"]
