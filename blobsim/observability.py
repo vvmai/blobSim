@@ -74,6 +74,9 @@ class StateRecorder:
                 action_cost=sd.action_cost if sd else 0.0,
                 energy_absorbed=sd.energy_absorbed if sd else 0.0,
                 alive=blob.status.alive,
+                energy_gained_from_predation=(
+                    sd.energy_gained_from_predation if sd else 0.0
+                ),
             ))
         self.blob_records.append(blob_recs)
 
@@ -198,6 +201,7 @@ class StateRecorder:
                     "action_succeeded": rec.action_succeeded,
                     "action_cost": rec.action_cost,
                     "energy_absorbed": rec.energy_absorbed,
+                    "energy_gained_from_predation": rec.energy_gained_from_predation,
                     "alive": rec.alive,
                 })
 

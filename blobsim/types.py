@@ -29,6 +29,7 @@ class ActionType(Enum):
     IDLE = "idle"
     MOVE = "move"
     REPRODUCE = "reproduce"
+    ATTACK = "attack"
 
 
 # ---------------------------------------------------------------------------
@@ -134,6 +135,7 @@ class StepData:
     action_succeeded: bool
     action_cost: float
     energy_absorbed: float
+    energy_gained_from_predation: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -150,6 +152,7 @@ class BlobRecord:
     action_cost: float
     energy_absorbed: float
     alive: bool
+    energy_gained_from_predation: float = 0.0
 
 
 @dataclass(frozen=True)

@@ -11,8 +11,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Iterator
 
 import numpy as np
+from matplotlib import colormaps
 from matplotlib.backends.backend_agg import FigureCanvasAgg
-from matplotlib.cm import get_cmap
 from matplotlib.figure import Figure
 from PIL import Image
 
@@ -100,7 +100,7 @@ def render_gif(
 
 def _build_palette(species_names: set[str]) -> dict[str, tuple[float, ...]]:
     """Map sorted species names → deterministic RGBA colors via tab10."""
-    cmap = get_cmap("tab10")
+    cmap = colormaps["tab10"]
     return {name: cmap(i % 10) for i, name in enumerate(sorted(species_names))}
 
 

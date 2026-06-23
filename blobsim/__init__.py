@@ -51,6 +51,7 @@ __all__ = [
     "MOORE",
     "Observation",
     "RandomResolver",
+    "RegeneratingEnvironment",
     "ResolvedAction",
     "RulesEngine",
     "RulesEngineError",

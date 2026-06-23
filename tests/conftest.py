@@ -195,22 +195,18 @@ def make_observation(
     if allowed_directions is None:
         allowed_directions = MOORE
 
-    attrs = BlobAttributes(
+    attrs = BlobAttributes.create(
         species=species,
         max_energy=max_energy,
         offspring_energy=offspring_energy,
         reproduction_threshold=reproduction_threshold,
         base_metabolic_cost=base_metabolic_cost,
-        action_costs=MappingProxyType({
-            ActionType.IDLE: 0.0,
-            ActionType.MOVE: 0.2,
-            ActionType.REPRODUCE: 0.0,
-        }),
+        move_cost=0.2,
+        reproduce_cost=0.0,
         observation_radius=1,
         sensing_level=SensingLevel.BASIC,
         allowed_actions=allowed_actions,
         allowed_directions=allowed_directions,
-        extra=MappingProxyType({}),
     )
 
     status = BlobStatus(energy=energy, age=age, position=position)

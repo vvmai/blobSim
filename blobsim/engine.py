@@ -16,6 +16,7 @@ from blobsim.blob import Blob, BlobStatus
 from blobsim.conflict import resolve_all
 from blobsim.grid import Grid
 from blobsim.ledger import (
+    ConfigError,
     EnergyLedger,
     InvariantError,
     RulesEngineError,
@@ -80,6 +81,17 @@ class SimulationEngine:
         self._blob_index: dict[int, Blob] = {b.id: b for b in blobs}
         self._step: int = 0
 
+        # FLAG-7: Validate that every prey name in preys_on is a known species
+        known_species = set(species_configs.keys())
+        for blob in blobs:
+            for prey_name in blob.attributes.preys_on:
+                if prey_name not in known_species:
+                    raise ConfigError(
+                        f"Species '{blob.attributes.species}' preys_on "
+                        f"'{prey_name}' which is not a known species. "
+                        f"Known: {sorted(known_species)}"
+                    )
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -89,6 +101,7 @@ class SimulationEngine:
 
         Returns:
             (n_births, n_deaths) for this step.
+            n_deaths includes both predation deaths and starvation deaths.
         """
         # Phase 1: OBSERVE
         observations = self._phase_observe()
@@ -100,13 +113,21 @@ class SimulationEngine:
         actions = self._phase_validate(actions)
 
         # Phase 4: CLAIM
-        claims_by_cell, occupied_cells = self._phase_claim(actions)
+        claims_by_cell, attack_claims_by_prey, occupied_cells = (
+            self._phase_claim(actions)
+        )
 
         # Phase 5: RESOLVE
-        resolved, step_data = self._phase_resolve(claims_by_cell, occupied_cells)
+        resolved, step_data = self._phase_resolve(
+            claims_by_cell, attack_claims_by_prey, occupied_cells,
+        )
 
-        # Phase 6: EXECUTE
-        newborns = self._phase_execute(resolved, step_data)
+        # Capture pre-EXECUTE snapshot before ATTACK kills remove blobs
+        # (FLAG-1: predation deaths must appear in all_step_blobs for recorder)
+        pre_execute_blobs = list(self.blobs)
+
+        # Phase 6: EXECUTE — ATTACK-first ordering
+        newborns, n_predation_deaths = self._phase_execute(resolved, step_data)
         n_births = len(newborns)
 
         # Phase 7: CHARGE
@@ -115,13 +136,14 @@ class SimulationEngine:
         # Phase 8: ABSORB
         self._phase_absorb(step_data)
 
-        # Snapshot all blobs before death removes them (spec §12:
-        # snapshot receives pre-EXECUTE blobs + newborns, including
-        # those about to die with alive=False).
-        all_step_blobs = list(self.blobs)
+        # Build full step blob list: pre-EXECUTE blobs + newborns.
+        # Includes predation-killed blobs (alive=False set in EXECUTE)
+        # and blobs about to be removed by DEATH_CHECK.
+        all_step_blobs = pre_execute_blobs + newborns
 
         # Phase 9: DEATH CHECK
-        n_deaths = self._phase_death_check()
+        n_starvation_deaths = self._phase_death_check()
+        n_deaths = n_predation_deaths + n_starvation_deaths
 
         # Phase 10: ENVIRONMENT
         self._phase_environment()
@@ -274,6 +296,20 @@ class SimulationEngine:
                     f"not in allowed_directions"
                 )
 
+            # Contract check 3: ATTACK requires a direction in allowed_directions
+            if action.type == ActionType.ATTACK and action.direction is None:
+                raise RulesEngineError(
+                    f"Blob {blob.id}: ATTACK requires a direction"
+                )
+            if (
+                action.type == ActionType.ATTACK
+                and action.direction not in blob.attributes.allowed_directions
+            ):
+                raise RulesEngineError(
+                    f"Blob {blob.id}: ATTACK direction {action.direction} "
+                    f"not in allowed_directions"
+                )
+
             # Game mechanic: affordability gate (one-shot downgrade)
             if not self._can_afford(blob, action):
                 action = Action(ActionType.IDLE)
@@ -300,13 +336,22 @@ class SimulationEngine:
 
     def _phase_claim(
         self, actions: dict[int, Action],
-    ) -> tuple[dict[tuple[int, int], list[Claim]], set[tuple[int, int]]]:
+    ) -> tuple[
+        dict[tuple[int, int], list[Claim]],
+        dict[tuple[int, int], list[Claim]],
+        set[tuple[int, int]],
+    ]:
         """Convert validated actions to cell claims.
 
+        ATTACK claims are collected into a separate channel
+        (attack_claims_by_prey) to keep them out of resolve_all,
+        which rejects all occupied-cell claims (FLAG-5).
+
         Returns:
-            (claims_by_cell, occupied_cells)
+            (claims_by_cell, attack_claims_by_prey, occupied_cells)
         """
         claims_by_cell: dict[tuple[int, int], list[Claim]] = defaultdict(list)
+        attack_claims_by_prey: dict[tuple[int, int], list[Claim]] = defaultdict(list)
 
         for blob in self.blobs:
             action = actions[blob.id]
@@ -324,10 +369,34 @@ class SimulationEngine:
                 claims_by_cell[target].append(
                     Claim(blob.id, target, action),
                 )
+
+            elif action.type == ActionType.ATTACK:
+                dx, dy = action.direction  # type: ignore[misc]
+                target = self.grid.wrap(pos[0] + dx, pos[1] + dy)
+                target_id = int(self.grid.occupancy[target[0], target[1]])
+                if target_id < 0:
+                    # Prey has vacated (defensive guard — should not occur
+                    # within a single step since grid is immutable between
+                    # OBSERVE and CLAIM). Treat as failed: emit no claim.
+                    pass
+                else:
+                    target_blob = self._find_blob(target_id)
+                    if (
+                        target_blob is None
+                        or target_blob.attributes.species
+                        not in blob.attributes.preys_on
+                    ):
+                        raise RulesEngineError(
+                            f"Blob {blob.id}: ATTACK targets non-prey "
+                            f"species at {target}"
+                        )
+                    attack_claims_by_prey[target].append(
+                        Claim(blob.id, target, action),
+                    )
             # IDLE: no claim
 
         occupied_cells = {b.status.position for b in self.blobs}
-        return dict(claims_by_cell), occupied_cells
+        return dict(claims_by_cell), dict(attack_claims_by_prey), occupied_cells
 
     def _pick_reproduce_target(self, blob: Blob) -> tuple[int, int]:
         """Pick random empty neighbor cell for reproduction.
@@ -358,9 +427,15 @@ class SimulationEngine:
     def _phase_resolve(
         self,
         claims_by_cell: dict[tuple[int, int], list[Claim]],
+        attack_claims_by_prey: dict[tuple[int, int], list[Claim]],
         occupied_cells: set[tuple[int, int]],
     ) -> tuple[dict[int, ResolvedAction], dict[int, StepData]]:
         """Resolve all claims; synthesize IDLE for non-claiming blobs.
+
+        MOVE/REPRODUCE claims go through resolve_all (vacant-cell model).
+        ATTACK claims are resolved separately via _resolve_attack_claims,
+        after resolve_all, so engine_rng is consumed in a deterministic
+        sorted order: MOVE/REPRODUCE cells first, then ATTACK cells (INV-2).
 
         Returns:
             (resolved_actions, step_data) where step_data is initialized
@@ -369,6 +444,11 @@ class SimulationEngine:
         resolved = resolve_all(
             claims_by_cell, occupied_cells, self.resolver, self.engine_rng,
         )
+
+        # Resolve ATTACK claims after MOVE/REPRODUCE for determinism (INV-2).
+        # ATTACK targets are occupied cells — disjoint from resolve_all targets.
+        attack_resolved = self._resolve_attack_claims(attack_claims_by_prey)
+        resolved.update(attack_resolved)
 
         # Synthesize IDLE ResolvedAction for blobs not in results
         for blob in self.blobs:
@@ -391,6 +471,39 @@ class SimulationEngine:
 
         return resolved, step_data
 
+    def _resolve_attack_claims(
+        self,
+        attack_claims_by_prey: dict[tuple[int, int], list[Claim]],
+    ) -> dict[int, ResolvedAction]:
+        """Resolve competing ATTACK claims on each prey cell.
+
+        Iterates sorted prey positions for determinism (INV-2).
+        Uses same resolver + engine_rng as resolve_all, consumed after it.
+
+        Args:
+            attack_claims_by_prey: Mapping from prey cell to list of
+                ATTACK claims targeting that cell.
+
+        Returns:
+            Mapping from blob_id to ResolvedAction for every attacker.
+        """
+        attack_resolved: dict[int, ResolvedAction] = {}
+
+        for prey_pos in sorted(attack_claims_by_prey.keys()):
+            claims = attack_claims_by_prey[prey_pos]
+            if len(claims) == 1:
+                winner = claims[0]
+            else:
+                winner = self.resolver.resolve(claims, self.engine_rng)
+
+            for c in claims:
+                succeeded = c.blob_id == winner.blob_id
+                attack_resolved[c.blob_id] = ResolvedAction(
+                    c.blob_id, c.action, prey_pos, succeeded=succeeded,
+                )
+
+        return attack_resolved
+
     # ------------------------------------------------------------------
     # Phase 6: EXECUTE
     # ------------------------------------------------------------------
@@ -399,8 +512,82 @@ class SimulationEngine:
         self,
         resolved: dict[int, ResolvedAction],
         step_data: dict[int, StepData],
-    ) -> list[Blob]:
-        """Execute resolved actions. Returns list of newborn blobs."""
+    ) -> tuple[list[Blob], int]:
+        """Execute resolved actions. Returns (newborns, n_predation_deaths).
+
+        Ordering: ATTACK kills first (so prey cannot dodge), then
+        MOVE/REPRODUCE for surviving blobs only (§8.2 Option A).
+        """
+        # --- ATTACK-first: kill prey before MOVE reshuffles the grid ---
+        # Iterate in sorted prey-cell order (matching _resolve_attack_claims
+        # determinism, INV-2) so that mutual-predation (A↔B) resolves
+        # consistently: the predator whose prey cell sorts smallest fires first,
+        # removing that prey from the grid; the other predator then finds its
+        # prey's cell empty and skips (§8.2, §12.2).
+        blob_index = {b.id: b for b in self.blobs}
+        winning_attacks: list[tuple[tuple[int, int], int]] = []  # (prey_pos, blob_id)
+        for blob in self.blobs:
+            ra = resolved.get(blob.id)
+            if ra is not None and ra.succeeded and ra.action.type == ActionType.ATTACK:
+                winning_attacks.append((ra.target, blob.id))  # type: ignore[arg-type]
+
+        # Sort by prey position for determinism (INV-2)
+        winning_attacks.sort(key=lambda x: x[0])
+
+        killed_ids: set[int] = set()
+        n_predation_deaths = 0
+
+        for prey_pos, attacker_id in winning_attacks:
+            # Skip if this attacker was itself killed earlier in this loop
+            # (mutual-predation: A kills B, then B's attack on A is skipped)
+            if attacker_id in killed_ids:
+                continue
+
+            blob = blob_index.get(attacker_id)
+            if blob is None:
+                continue
+
+            # re-read occupancy: prey may already be gone (mutual-attack case)
+            prey_id = int(self.grid.occupancy[prey_pos[0], prey_pos[1]])
+            if prey_id < 0:
+                # Prey already killed by an earlier attacker (sorted-cell order)
+                continue
+            prey = self._find_blob(prey_id)
+            if prey is None:
+                continue
+
+            # Energy transfer: predator gains min(prey.energy, headroom)
+            headroom = blob.attributes.max_energy - blob.status.energy
+            transfer = min(prey.status.energy, max(0.0, headroom))
+            dissipate = prey.status.energy - transfer
+
+            # Assert conservation before zeroing prey energy (§9)
+            assert abs(transfer + dissipate - prey.status.energy) < 1e-10, (
+                f"Attack energy accounting error: transfer={transfer}, "
+                f"dissipate={dissipate}, prey.energy={prey.status.energy}"
+            )
+
+            blob.status.energy += transfer
+            self.ledger.add_dissipated(dissipate)
+
+            if attacker_id in step_data:
+                step_data[attacker_id].energy_gained_from_predation += transfer
+
+            # Kill prey immediately (grid.remove_blob so subsequent mutual
+            # attacks find the cell empty)
+            prey.status.energy = 0.0
+            prey.status.alive = False
+            self.grid.remove_blob(prey.status.position)
+            killed_ids.add(prey_id)
+            n_predation_deaths += 1
+
+        # Remove killed prey from blobs list and index
+        if killed_ids:
+            self.blobs = [b for b in self.blobs if b.id not in killed_ids]
+            for kid in killed_ids:
+                del self._blob_index[kid]
+
+        # --- MOVE and REPRODUCE for surviving blobs ---
         moves: list[tuple[int, tuple[int, int], tuple[int, int]]] = []
         births: list[tuple[int, tuple[int, int]]] = []
         newborns: list[Blob] = []
@@ -459,7 +646,7 @@ class SimulationEngine:
         for child_id, pos in births:
             self.grid.place_blob(child_id, pos)
 
-        return newborns
+        return newborns, n_predation_deaths
 
     # ------------------------------------------------------------------
     # Phase 7: CHARGE

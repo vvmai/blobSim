@@ -41,6 +41,7 @@ class BlobAttributes:
     allowed_actions: frozenset  # frozenset[ActionType]
     allowed_directions: frozenset  # frozenset[tuple[int, int]]
     extra: MappingProxyType  # str -> Any
+    preys_on: frozenset = frozenset()  # frozenset[str] — species names this blob may attack
 
     # -- Identity-based equality / hash (MappingProxyType not hashable) -----
 
@@ -68,6 +69,8 @@ class BlobAttributes:
         idle_cost: float = 0.0,
         sensing_level: SensingLevel = SensingLevel.BASIC,
         extra: dict[str, Any] | None = None,
+        attack_cost: float = 0.0,
+        preys_on: frozenset | None = None,
     ) -> BlobAttributes:
         """Build ``BlobAttributes`` with validation.
 
@@ -77,8 +80,12 @@ class BlobAttributes:
 
         Raises:
             ConfigError: If ``IDLE`` not in *allowed_actions* or
-                *offspring_energy* <= *base_metabolic_cost*.
+                *offspring_energy* <= *base_metabolic_cost* or any
+                predation validation rule B-P1..B-P4 is violated.
         """
+        if preys_on is None:
+            preys_on = frozenset()
+
         if ActionType.IDLE not in allowed_actions:
             raise ConfigError(
                 "ActionType.IDLE must be in allowed_actions"
@@ -90,10 +97,32 @@ class BlobAttributes:
                 f"newborn survives its first step"
             )
 
+        # B-P1: ATTACK allowed but no prey declared
+        if ActionType.ATTACK in allowed_actions and len(preys_on) == 0:
+            raise ConfigError(
+                "ATTACK in allowed_actions requires non-empty preys_on"
+            )
+        # B-P2: prey declared but ATTACK not allowed
+        if len(preys_on) > 0 and ActionType.ATTACK not in allowed_actions:
+            raise ConfigError(
+                "preys_on is non-empty but ATTACK not in allowed_actions"
+            )
+        # B-P3: species cannot prey on itself
+        if species in preys_on:
+            raise ConfigError(
+                f"species cannot prey on itself: {species}"
+            )
+        # B-P4: attack_cost must be non-negative
+        if attack_cost < 0:
+            raise ConfigError(
+                "attack_cost must be >= 0"
+            )
+
         action_costs = MappingProxyType({
             ActionType.IDLE: idle_cost,
             ActionType.MOVE: move_cost,
             ActionType.REPRODUCE: reproduce_cost,
+            ActionType.ATTACK: attack_cost,
         })
 
         safe_extra = MappingProxyType(copy.deepcopy(extra) if extra else {})
@@ -110,6 +139,7 @@ class BlobAttributes:
             allowed_actions=allowed_actions,
             allowed_directions=allowed_directions,
             extra=safe_extra,
+            preys_on=preys_on,
         )
 
 
