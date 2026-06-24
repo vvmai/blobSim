@@ -27,6 +27,7 @@ GRID_CMAP = "YlGn"
 MARKER_SIZE_RANGE = (20, 80)
 BLOB_MAX_ENERGY = 20.0
 CELL_FILL_BG = (0.88, 0.88, 0.88)  # light grey background for cell_fill mode
+ALPHA_LEVELS = 4  # energy-opacity fade is snapped to this many steps (GIF size)
 
 
 # ── Public API ───────────────────────────────────────────────────────
@@ -173,11 +174,21 @@ def _render_frame(
         fig.set_facecolor(bg)
         ax.set_facecolor(bg)
         img = np.ones((grid_size, grid_size, 3)) * np.array(bg)
+        bg_arr = np.array(bg)
         for r in blob_records:
             if not r.alive:
                 continue
-            base = palette.get(r.species, (1.0, 1.0, 1.0, 1.0))
-            img[r.position[0], r.position[1]] = base[:3]
+            base = np.array(palette.get(r.species, (1.0, 1.0, 1.0, 1.0))[:3])
+            if alpha_by_energy:
+                # composite species colour over the background by energy:
+                # >=50% energy renders at full colour; below 50% it fades
+                # toward the background ("dead disappears"). Snap to a few
+                # discrete levels so the GIF palette stays small (continuous
+                # alpha gives every cell a unique shade and kills compression).
+                f = min(max(r.energy / BLOB_MAX_ENERGY, 0.0), 1.0)
+                a = round(min(f / 0.5, 1.0) * ALPHA_LEVELS) / ALPHA_LEVELS
+                base = bg_arr * (1.0 - a) + base * a
+            img[r.position[0], r.position[1]] = base
         ax.imshow(img, origin="lower", interpolation="nearest")
         ax.set_xlim(-0.5, grid_size - 0.5)
         ax.set_ylim(-0.5, grid_size - 0.5)

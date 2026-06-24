@@ -12,3 +12,4 @@ build/
 .claude
 docs/
 pyrightconfig.json
+tmp/

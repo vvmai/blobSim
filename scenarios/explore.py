@@ -27,6 +27,7 @@ from blobsim.rng import create_rng_hierarchy, make_blob_rng
 from blobsim.simulation import Simulation, SimulationResult
 from blobsim.species.omnivore import OmnivoreRules
 
+from scenarios.cyclic_ouroboros import METAB, RATE
 from scenarios.spatial_ouroboros import fighter
 
 FIGS = Path(__file__).parent / "figs"
@@ -35,22 +36,22 @@ FIGS.mkdir(exist_ok=True)
 CYCLE = [("A", "B"), ("B", "C"), ("C", "A")]
 
 
-def cyclic_species(counts):
+def cyclic_species(counts, metab=METAB):
     return [
         SpeciesConfig(
             OmnivoreRules,
-            fighter(s, p, thr=8.0, off=2.0, atk=0.1, metab=0.15, max_e=18.0),
+            fighter(s, p, thr=8.0, off=2.0, atk=0.1, metab=metab, max_e=18.0),
             counts, 8.0)
         for s, p in CYCLE
     ]
 
 
-def run_random(gs, steps, seed):
+def run_random(gs, steps, seed, rate=RATE, metab=METAB):
     """3-cycle, random initial mix (Simulation default placement)."""
     n = (gs * gs) // 12
     cfg = SimulationConfig(
-        grid_size=gs, environment=RegeneratingEnvironment(0.2, 5.0, 5.0),
-        species=cyclic_species(n), seed=seed)
+        grid_size=gs, environment=RegeneratingEnvironment(rate, 5.0, 5.0),
+        species=cyclic_species(n, metab), seed=seed)
     sim = Simulation(cfg)
     try:
         for _ in sim.iterate(steps):
@@ -86,6 +87,55 @@ def finite_size():
         rows.append((gs, allthree))
         print(f"{gs:>4} | {allthree}/5{'':18} | {last}")
     return rows
+
+
+def measure_lambda(gs=72, steps=500, seed=5):
+    """Domain wavelength from the spatial autocorrelation on a large grid."""
+    from scenarios.cyclic_ouroboros import _wavelength
+    rec = run_random(gs, steps, seed).recorder
+    return _wavelength(rec, gs, "A")
+
+
+def finite_size_figure(steps=400):
+    """The 'how big must the world be?' figure: sweep grid size, measure how
+    often all three species survive, and overlay the independently-measured
+    domain wavelength. Saves cyclic_finite_size.png. Run at the display density.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    lam = measure_lambda()
+    print(f"\n=== finite-size figure: lambda~{lam:.0f}, sweep at rate={RATE} ===")
+    sizes = [18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 40, 44]
+    seeds = {s: (20 if 22 <= s <= 36 else 12) for s in sizes}
+    frac = []
+    for s in sizes:
+        ns = seeds[s]
+        k = sum(1 for sd in range(ns)
+                if sum(1 for v in n_alive_by_species(
+                    run_random(s, steps, 400 + sd).recorder).values() if v > 0) == 3)
+        frac.append(k / ns)
+        print(f"  gs={s}: {k}/{ns} = {k / ns:.2f}", flush=True)
+
+    fig, ax = plt.subplots(figsize=(4.8, 2.7))
+    ax.plot(sizes, frac, "o-", color="#6a3d9a", lw=2, ms=5, label="measured")
+    ax.axvline(lam, color="#1f77b4", ls="--", lw=1.5,
+               label=f"predicted ≈ λ ≈ {lam:.0f}")
+    ax.axhspan(-0.05, 0.05, color="#d62728", alpha=0.07)
+    ax.axhspan(0.95, 1.05, color="#2ca02c", alpha=0.07)
+    ax.set_xlabel("grid size (cells/side)")
+    ax.set_ylabel("runs with all 3 surviving")
+    ax.set_ylim(-0.05, 1.05)
+    ax.set_xticks(sizes)
+    ax.grid(True, alpha=0.3, lw=0.6)
+    ax.legend(fontsize=7)
+    fig.tight_layout()
+    out = FIGS / "cyclic_finite_size.png"
+    fig.savefig(out, dpi=120, facecolor="white")
+    plt.close(fig)
+    print(f"  saved {out} (lambda={lam:.1f})")
+    return lam, list(zip(sizes, frac))
 
 
 # ---------------------------------------------------------------------------

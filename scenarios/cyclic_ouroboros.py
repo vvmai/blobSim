@@ -10,12 +10,17 @@ Run: .venv/bin/python -m scenarios.cyclic_ouroboros
 """
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
+from matplotlib import colormaps  # noqa: E402
+from matplotlib.backends.backend_agg import FigureCanvasAgg  # noqa: E402
+from matplotlib.figure import Figure  # noqa: E402
+from PIL import Image  # noqa: E402
 
 from blobsim.config import SimulationConfig, SpeciesConfig  # noqa: E402
 from blobsim.environment import RegeneratingEnvironment  # noqa: E402
@@ -24,11 +29,24 @@ from blobsim.rendering import render_gif  # noqa: E402
 from blobsim.simulation import Simulation  # noqa: E402
 
 from blobsim.species.omnivore import OmnivoreRules  # noqa: E402
+from scenarios.discover import occupancy_map  # noqa: E402
 from scenarios.spatial_ouroboros import fighter  # noqa: E402
 
 FIGS = Path(__file__).parent / "figs"
 FIGS.mkdir(exist_ok=True)
 COL = {"A": "#1f77b4", "B": "#ff7f0e", "C": "#2ca02c"}
+
+# Density of the cyclic pattern world. High food + cheap metabolism push the
+# steady-state occupancy to ~85-90% so the rotating domains read clearly (a
+# sparse grid hides the structure). These are display knobs for the *qualitative*
+# pattern -- they don't affect the benchmark base-cases, which keep their own
+# analytically-meaningful rates.
+RATE = 2.0
+METAB = 0.10
+# Collapse demo runs below the spiral wavelength (lambda ~ 31-33 cells, which is
+# itself ~invariant to density). 22 < lambda, so cyclic dominance can't fit and
+# collapses to a single survivor.
+COLLAPSE_GS = 22
 
 
 def lead_lag(x, y, max_lag=60):
@@ -48,16 +66,16 @@ def lead_lag(x, y, max_lag=60):
 def run():
     print("\n=== CYCLIC OUROBOROS: A->B->C->A omnivores (rock-paper-scissors) ===")
     gs = 60
-    env = RegeneratingEnvironment(0.2, 5.0, 5.0)
+    env = RegeneratingEnvironment(RATE, 5.0, 5.0)
     # A eats B, B eats C, C eats A
     specs = [
         ("A", "B"), ("B", "C"), ("C", "A"),
     ]
-    n = (gs * gs) // 12  # ~8% each -> ~24% occupancy
+    n = (gs * gs) // 12
     species = [
         SpeciesConfig(
             OmnivoreRules,
-            fighter(s, prey, thr=8.0, off=2.0, atk=0.1, metab=0.15, max_e=18.0),
+            fighter(s, prey, thr=8.0, off=2.0, atk=0.1, metab=METAB, max_e=18.0),
             n, 8.0)
         for s, prey in specs
     ]
@@ -87,8 +105,153 @@ def run():
     _metrics(rec, "Cyclic 3-species ouroboros (A->B->C->A)",
              FIGS / "cyclic_ouroboros_metrics.png", (lab, lbc, lca))
     _frames(rec, gs, "Cyclic ouroboros", FIGS / "cyclic_ouroboros_frames.png")
-    render_gif(res, FIGS / "cyclic_ouroboros.gif", fps=12, sample_every=8,
-               cell_fill=True, cell_pixels=10)
+    render_gif(res, FIGS / "cyclic_ouroboros.gif", fps=12, sample_every=15,
+               cell_fill=True, alpha_by_energy=True, cell_pixels=8)
+    _orbit(rec, FIGS / "cyclic_orbit.gif")
+    return res
+
+
+def _orbit(rec, path, *, step=10, tail=300, fps=15):
+    """Animate the population composition as a point wandering the A/B/C
+    simplex (the cyclic rotation traces a loop around the centroid). A line
+    plot, not a grid render -- the energy-opacity rule does not apply here.
+    """
+    spp = rec.species_population()
+    A, B, C = (spp.get(k, np.zeros(1)).astype(float) for k in ("A", "B", "C"))
+    tot = np.clip(A + B + C, 1, None)
+    b, c = B / tot, C / tot
+    X = b + 0.5 * c
+    Y = (math.sqrt(3) / 2) * c
+    T = len(X)
+    cmap = colormaps["viridis"]
+    pal = {n: colormaps["tab10"](i) for i, n in enumerate(sorted(("A", "B", "C")))}
+    tri = np.array([[0, 0], [1, 0], [0.5, math.sqrt(3) / 2], [0, 0]])
+    frames = []
+    for k in range(2, T, step):
+        fig = Figure(figsize=(5.0, 4.9), dpi=100, facecolor="white")
+        canvas = FigureCanvasAgg(fig)
+        ax = fig.add_axes((0.02, 0.04, 0.84, 0.92))
+        ax.plot(tri[:, 0], tri[:, 1], color="0.55", lw=1.6)
+        ax.plot(X[:k], Y[:k], color="0.78", lw=0.9, zorder=1)
+        lo = max(0, k - tail)
+        ax.scatter(X[lo:k], Y[lo:k], c=np.arange(lo, k), cmap=cmap,
+                   vmin=0, vmax=T, s=11, zorder=2)
+        ax.scatter([X[k]], [Y[k]], color=cmap(k / T), s=110,
+                   edgecolors="black", linewidths=1.0, zorder=3)
+        ax.plot(0.5, math.sqrt(3) / 6, marker="+", color="k", ms=14, mew=2, zorder=1)
+        for (px, py), lab in [((0, 0), "A"), ((1, 0), "B"), ((0.5, math.sqrt(3) / 2), "C")]:
+            ax.annotate(lab, (px, py), textcoords="offset points",
+                        xytext=(-16 if px < 0.4 else (16 if px > 0.6 else 0),
+                                -20 if py < 0.1 else 14),
+                        fontsize=22, color=pal[lab], weight="bold", ha="center")
+        ax.text(0.5, -0.02, f"step {k}", transform=ax.transAxes, ha="center",
+                fontsize=15, color="0.25")
+        ax.set_xlim(-0.10, 1.10)
+        ax.set_ylim(-0.12, 1.0)
+        ax.set_aspect("equal")
+        ax.axis("off")
+        canvas.draw()
+        frames.append(np.asarray(canvas.buffer_rgba()).copy())
+        fig.clear()
+    Image.fromarray(frames[0], "RGBA").save(
+        path, save_all=True,
+        append_images=[Image.fromarray(f, "RGBA") for f in frames[1:]],
+        duration=1000 // fps, loop=0, disposal=2)
+    return path
+
+
+def collapse(seed: int = 7, steps: int = 400):
+    """Same A->B->C->A omnivores, but on a grid SMALLER than the spiral
+    wavelength (~22 cells). Below that critical size the rotating waves cannot
+    fit, so cyclic dominance collapses to a single surviving species -- the
+    counter-example to coexistence. Renders cyclic_collapse.gif.
+    """
+    print("\n=== CYCLIC COLLAPSE: grid below the spiral wavelength ===")
+    gs = COLLAPSE_GS
+    env = RegeneratingEnvironment(RATE, 5.0, 5.0)
+    n = (gs * gs) // 12
+    species = [
+        SpeciesConfig(
+            OmnivoreRules,
+            fighter(s, prey, thr=8.0, off=2.0, atk=0.1, metab=METAB, max_e=18.0),
+            n, 8.0)
+        for s, prey in (("A", "B"), ("B", "C"), ("C", "A"))
+    ]
+    cfg = SimulationConfig(grid_size=gs, environment=env, species=species, seed=seed)
+    sim = Simulation(cfg)
+    try:
+        for _ in sim.iterate(steps):
+            pass
+    except ConservationError as e:
+        print(f"  !! ConservationError: {e}")
+    res = sim.result()
+    spp = res.recorder.species_population()
+    A, B, C = (spp.get(k, np.zeros(1)) for k in ("A", "B", "C"))
+    surv = sum(1 for v in (A[-1], B[-1], C[-1]) if v > 0)
+    print(f"  final A={int(A[-1])} B={int(B[-1])} C={int(C[-1])} "
+          f"| survivors={surv}/3 (collapse if <3)")
+    render_gif(res, FIGS / "cyclic_collapse.gif", fps=10, sample_every=6,
+               cell_fill=True, alpha_by_energy=True, cell_pixels=12)
+    return res
+
+
+def _wavelength(rec, gs, species):
+    """Domain wavelength (cells) from the first zero-crossing of the radial
+    autocorrelation of a species' occupancy map, averaged over the tail."""
+    lams = []
+    T = len(rec.blob_records)
+    for t in range(max(0, T - 100), T, 20):
+        field = occupancy_map(rec.blob_records, t, gs, species).astype(float)
+        field = field - field.mean()
+        ft = np.fft.fft2(field)
+        ac = np.fft.fftshift(np.fft.ifft2(ft * np.conj(ft)).real)
+        ac /= ac.max()
+        cy, cx = np.array(ac.shape) // 2
+        yy, xx = np.indices(ac.shape)
+        r = np.hypot(xx - cx, yy - cy).astype(int)
+        rad = np.bincount(r.ravel(), ac.ravel()) / np.bincount(r.ravel())
+        zero = np.where(rad < 0)[0]
+        if len(zero):
+            lams.append(2 * zero[0])
+    return float(np.mean(lams)) if lams else float("nan")
+
+
+def five_species(seed: int = 7, steps: int = 1200):
+    """Does cyclic dominance generalise past three species? Five omnivores in a
+    ring A->B->C->D->E->A (each preys on the next, is preyed on by the prior).
+    They still coexist, but the extra species pack the lattice into finer, more
+    fragmented domains -- a different (coarser-measured) wavelength than the
+    3-cycle. Renders cyclic_five.gif.
+    """
+    print("\n=== FIVE-SPECIES CYCLE: A->B->C->D->E->A ===")
+    gs = 72
+    env = RegeneratingEnvironment(RATE, 5.0, 5.0)
+    ring = [("A", "B"), ("B", "C"), ("C", "D"), ("D", "E"), ("E", "A")]
+    n = (gs * gs) // 20
+    species = [
+        SpeciesConfig(
+            OmnivoreRules,
+            fighter(s, prey, thr=8.0, off=2.0, atk=0.1, metab=METAB, max_e=18.0),
+            n, 8.0)
+        for s, prey in ring
+    ]
+    cfg = SimulationConfig(grid_size=gs, environment=env, species=species, seed=seed)
+    sim = Simulation(cfg)
+    try:
+        for _ in sim.iterate(steps):
+            pass
+    except ConservationError as e:
+        print(f"  !! ConservationError: {e}")
+    res = sim.result()
+    rec = res.recorder
+    spp = rec.species_population()
+    fin = {k: int(spp.get(k, np.zeros(1))[-1]) for k in "ABCDE"}
+    resid = float(np.abs(rec.conservation_residuals()).max())
+    print(f"  final {fin} | all coexist={min(fin.values()) > 0} | maxResid={resid:.1e}")
+    print(f"  domain wavelength lambda(A) ~ {_wavelength(rec, gs, 'A'):.0f} cells "
+          f"(3-species ~33)")
+    render_gif(res, FIGS / "cyclic_five.gif", fps=12, sample_every=16,
+               cell_fill=True, alpha_by_energy=True, cell_pixels=7)
     return res
 
 
@@ -145,4 +308,6 @@ def _frames(rec, gs, title, path):
 
 if __name__ == "__main__":
     run()
+    collapse()
+    five_species()
     print(f"\nfigures in {FIGS}")
