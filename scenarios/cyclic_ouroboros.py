@@ -43,10 +43,11 @@ COL = {"A": "#1f77b4", "B": "#ff7f0e", "C": "#2ca02c"}
 # analytically-meaningful rates.
 RATE = 2.0
 METAB = 0.10
-# Collapse demo runs below the spiral wavelength (lambda ~ 31-33 cells, which is
-# itself ~invariant to density). 22 < lambda, so cyclic dominance can't fit and
-# collapses to a single survivor.
-COLLAPSE_GS = 22
+# Collapse demo runs below the spiral wavelength (lambda ~ 33 cells, ~invariant
+# to density). At the high display density a few losers cling on near gs=22, so
+# the demo uses a grid well below lambda for a clean single-survivor collapse.
+COLLAPSE_GS = 18
+COLLAPSE_SEED = 2
 
 
 def lead_lag(x, y, max_lag=60):
@@ -160,9 +161,9 @@ def _orbit(rec, path, *, step=10, tail=300, fps=15):
     return path
 
 
-def collapse(seed: int = 7, steps: int = 400):
+def collapse(seed: int = COLLAPSE_SEED, steps: int = 400):
     """Same A->B->C->A omnivores, but on a grid SMALLER than the spiral
-    wavelength (~22 cells). Below that critical size the rotating waves cannot
+    wavelength (~33 cells). Below that critical size the rotating waves cannot
     fit, so cyclic dominance collapses to a single surviving species -- the
     counter-example to coexistence. Renders cyclic_collapse.gif.
     """
@@ -255,6 +256,40 @@ def five_species(seed: int = 7, steps: int = 1200):
     return res
 
 
+def asymmetric(seed: int = 7, steps: int = 1200):
+    """Break the symmetry: make A a stronger predator of B (max_energy 26 vs the
+    others' 18) so A wins more of its fights. The cycle is robust -- all three
+    still coexist, the rotation just runs a little lopsided. Renders asym_3.gif.
+    """
+    print("\n=== ASYMMETRIC 3-CYCLE: A overpowered (max_e=26) ===")
+    gs = 60
+    env = RegeneratingEnvironment(RATE, 5.0, 5.0)
+    n = (gs * gs) // 12
+    maxe = {"A": 26.0, "B": 18.0, "C": 18.0}
+    species = [
+        SpeciesConfig(
+            OmnivoreRules,
+            fighter(s, prey, thr=8.0, off=2.0, atk=0.1, metab=METAB, max_e=maxe[s]),
+            n, 8.0)
+        for s, prey in (("A", "B"), ("B", "C"), ("C", "A"))
+    ]
+    cfg = SimulationConfig(grid_size=gs, environment=env, species=species, seed=seed)
+    sim = Simulation(cfg)
+    try:
+        for _ in sim.iterate(steps):
+            pass
+    except ConservationError as e:
+        print(f"  !! ConservationError: {e}")
+    res = sim.result()
+    spp = res.recorder.species_population()
+    fin = {k: int(spp.get(k, np.zeros(1))[-1]) for k in "ABC"}
+    resid = float(np.abs(res.recorder.conservation_residuals()).max())
+    print(f"  final {fin} | all coexist={min(fin.values()) > 0} | maxResid={resid:.1e}")
+    render_gif(res, FIGS / "asym_3.gif", fps=12, sample_every=15,
+               cell_fill=True, alpha_by_energy=True, cell_pixels=8)
+    return res
+
+
 def _metrics(rec, title, path, lags):
     spp = rec.species_population()
     A, B, C = (spp.get(k, np.zeros(1)) for k in ("A", "B", "C"))
@@ -310,4 +345,5 @@ if __name__ == "__main__":
     run()
     collapse()
     five_species()
+    asymmetric()
     print(f"\nfigures in {FIGS}")

@@ -30,3 +30,8 @@ packages = ["blobsim", "benchmark"]
 [tool.hatch.build]
 # Keep gifs and rendering-time artifacts out of the wheel.
 exclude = ["*.gif", "benchmark/gifs/"]
+
+[tool.pytest.ini_options]
+# Only collect the real suite; keep pytest out of scratch dirs (tmp/ holds
+# throwaway exploration scripts, some named *_test.py).
+testpaths = ["tests"]
