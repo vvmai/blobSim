@@ -26,6 +26,7 @@ if TYPE_CHECKING:
 GRID_CMAP = "YlGn"
 MARKER_SIZE_RANGE = (20, 80)
 BLOB_MAX_ENERGY = 20.0
+CELL_FILL_BG = (0.88, 0.88, 0.88)  # light grey background for cell_fill mode
 
 
 # ── Public API ───────────────────────────────────────────────────────
@@ -38,6 +39,11 @@ def render_gif(
     dpi: int = 72,
     cell_pixels: int = 12,
     sample_every: int = 1,
+    show_grid: bool = True,
+    size_by_energy: bool = True,
+    alpha_by_energy: bool = False,
+    marker_size: float = 40.0,
+    cell_fill: bool = False,
 ) -> Path:
     """Render simulation history to an animated GIF.
 
@@ -90,6 +96,11 @@ def render_gif(
                 dpi,
                 cell_pixels,
                 info_lines,
+                show_grid=show_grid,
+                size_by_energy=size_by_energy,
+                alpha_by_energy=alpha_by_energy,
+                marker_size=marker_size,
+                cell_fill=cell_fill,
             )
 
     path = Path(output_path) if output_path else Path(f"blobsim_{int(time.time())}.gif")
@@ -135,6 +146,12 @@ def _render_frame(
     dpi: int,
     cell_pixels: int,
     info_lines: list[str] | None = None,
+    *,
+    show_grid: bool = True,
+    size_by_energy: bool = True,
+    alpha_by_energy: bool = False,
+    marker_size: float = 40.0,
+    cell_fill: bool = False,
 ) -> np.ndarray:
     """Render a single simulation step to an RGBA numpy array."""
     fig_w = grid_size * cell_pixels / dpi
@@ -148,8 +165,41 @@ def _render_frame(
     ax_bottom = info_h / total_h + 0.02
     ax = fig.add_axes((0.08, ax_bottom, fig_w / total_w, fig_h / total_h))
 
-    # Grid heatmap
-    if grid is not None:
+    # Cell-fill mode: each live blob fills its whole cell with its solid
+    # species colour on a light grey background; a dead cell is just the
+    # background, so deaths read as cells winking back to grey.
+    if cell_fill:
+        bg = CELL_FILL_BG
+        fig.set_facecolor(bg)
+        ax.set_facecolor(bg)
+        img = np.ones((grid_size, grid_size, 3)) * np.array(bg)
+        for r in blob_records:
+            if not r.alive:
+                continue
+            base = palette.get(r.species, (1.0, 1.0, 1.0, 1.0))
+            img[r.position[0], r.position[1]] = base[:3]
+        ax.imshow(img, origin="lower", interpolation="nearest")
+        ax.set_xlim(-0.5, grid_size - 0.5)
+        ax.set_ylim(-0.5, grid_size - 0.5)
+        ax.set_xticks([])
+        ax.set_yticks([])
+        ax.set_title(
+            f"Step {ledger.step} | Alive: {ledger.n_alive}",
+            color="black", fontsize=9, pad=4,
+        )
+        if info_lines:
+            fig.text(
+                0.08, 0.01, "\n".join(info_lines),
+                color="black", fontsize=9, alpha=0.7,
+                verticalalignment="bottom", family="monospace",
+            )
+        canvas.draw()
+        buf = np.asarray(canvas.buffer_rgba()).copy()
+        fig.clear()
+        return buf
+
+    # Grid heatmap (optional — hide for a clean black background)
+    if show_grid and grid is not None:
         im = ax.imshow(
             grid, cmap=GRID_CMAP, vmin=0, vmax=grid_vmax,
             origin="lower", interpolation="nearest",
@@ -159,7 +209,7 @@ def _render_frame(
         cbar.set_ticklabels(["0", f"{grid_vmax:.1f}"])
         cbar.ax.tick_params(labelsize=9, colors="white")
         cbar.set_label("Grid energy", color="white", fontsize=9)
-    else:
+    elif show_grid:
         ax.imshow(
             np.zeros((grid_size, grid_size)), cmap="Greys", vmin=0, vmax=1,
             origin="lower", interpolation="nearest",
@@ -168,24 +218,41 @@ def _render_frame(
             grid_size / 2, grid_size / 2, "no grid data",
             ha="center", va="center", color="white", fontsize=8, alpha=0.6,
         )
+    else:
+        ax.set_facecolor("black")
 
     # Blobs (alive only)
     alive = [r for r in blob_records if r.alive]
     if alive:
         xs = [r.position[1] for r in alive]  # col → x
         ys = [r.position[0] for r in alive]  # row → y
-        colors = [palette.get(r.species, (1, 1, 1, 1)) for r in alive]
 
-        # Size proportional to energy
-        lo, hi = MARKER_SIZE_RANGE
-        sizes = [
-            lo + (hi - lo) * min(r.energy / BLOB_MAX_ENERGY, 1.0)
-            for r in alive
-        ]
+        # Marker size: fixed, or proportional to energy
+        if size_by_energy:
+            lo, hi = MARKER_SIZE_RANGE
+            sizes = [
+                lo + (hi - lo) * min(r.energy / BLOB_MAX_ENERGY, 1.0)
+                for r in alive
+            ]
+        else:
+            sizes = marker_size
+
+        # Marker colour: base species colour, with opacity ∝ energy if asked
+        # (so low-energy / dying blobs fade out against the black background).
+        if alpha_by_energy:
+            colors = []
+            for r in alive:
+                base = palette.get(r.species, (1.0, 1.0, 1.0, 1.0))
+                a = min(max(r.energy / BLOB_MAX_ENERGY, 0.0), 1.0)
+                colors.append((base[0], base[1], base[2], a))
+            edge = "none"
+        else:
+            colors = [palette.get(r.species, (1, 1, 1, 1)) for r in alive]
+            edge = "white"
 
         ax.scatter(
             xs, ys, s=sizes, c=colors,
-            edgecolors="white", linewidths=0.5, zorder=2,
+            edgecolors=edge, linewidths=0.5, zorder=2,
         )
 
     ax.set_xlim(-0.5, grid_size - 0.5)

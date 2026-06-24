@@ -62,35 +62,48 @@ class EnergyLedger:
         self._injected_deltas.append(amount)
 
 
+_ABS_TOL: float = 1e-10
+_REL_TOL: float = 1e-12
+
+
 def check_conservation(
     blobs: Iterable[Blob],
     grid: Grid,
     ledger: EnergyLedger,
-    tolerance: float = 1e-10,
 ) -> None:
     """Verify energy conservation: E_blobs + E_grid + dissipated - injected == initial.
 
     Uses math.fsum for blob energy summation.
     Uses if/raise (not assert) so checks survive python -O.
 
+    Tolerance scales with accumulated energy throughput to avoid false positives
+    on long, high-throughput runs where floating-point roundoff legitimately
+    accumulates. Formula: tol = ABS_TOL + REL_TOL * scale, where
+    scale = max(1.0, |e_dissipated| + |e_injected| + |e_blobs| + |e_grid|).
+    This keeps the tolerance at machine-precision relative to throughput while
+    still catching genuine leaks (which dump whole joules, far above tol).
+
     Args:
         blobs: Iterable of objects with .status.alive and .status.energy.
         grid: Object with .energy ndarray property (numpy sum called externally).
         ledger: EnergyLedger tracking dissipated/injected totals.
-        tolerance: Maximum allowed absolute deviation.
 
     Raises:
-        ConservationError: If |delta| > tolerance.
+        ConservationError: If |delta| > tol.
     """
     e_blobs = math.fsum(b.status.energy for b in blobs if b.status.alive)
     e_grid = float(grid.energy.sum())
-    lhs = e_blobs + e_grid + ledger.dissipated - ledger.injected
+    e_dissipated = ledger.dissipated
+    e_injected = ledger.injected
+    lhs = e_blobs + e_grid + e_dissipated - e_injected
     delta = lhs - ledger.initial_total
-    if abs(delta) > tolerance:
+    scale = max(1.0, abs(e_dissipated) + abs(e_injected) + abs(e_blobs) + abs(e_grid))
+    tol = _ABS_TOL + _REL_TOL * scale
+    if abs(delta) > tol:
         raise ConservationError(
-            f"Conservation violated: delta={delta}, "
+            f"Conservation violated: delta={delta:.6e}, tol={tol:.6e}, scale={scale:.6e}, "
             f"E_blobs={e_blobs}, E_grid={e_grid}, "
-            f"dissipated={ledger.dissipated}, injected={ledger.injected}"
+            f"dissipated={e_dissipated}, injected={e_injected}"
         )
 
 

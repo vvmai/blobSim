@@ -475,10 +475,15 @@ class SimulationEngine:
         self,
         attack_claims_by_prey: dict[tuple[int, int], list[Claim]],
     ) -> dict[int, ResolvedAction]:
-        """Resolve competing ATTACK claims on each prey cell.
+        """Resolve competing ATTACK claims on each prey cell via energy comparison.
+
+        An attack succeeds if and only if attacker.energy > victim.energy at
+        resolution time (before CHARGE). Among qualifying attackers, the one
+        with the highest energy wins; ties among the strongest are broken by
+        self.resolver. All non-winning attackers fail (pay attack_cost, gain
+        nothing).
 
         Iterates sorted prey positions for determinism (INV-2).
-        Uses same resolver + engine_rng as resolve_all, consumed after it.
 
         Args:
             attack_claims_by_prey: Mapping from prey cell to list of
@@ -491,13 +496,34 @@ class SimulationEngine:
 
         for prey_pos in sorted(attack_claims_by_prey.keys()):
             claims = attack_claims_by_prey[prey_pos]
-            if len(claims) == 1:
-                winner = claims[0]
-            else:
-                winner = self.resolver.resolve(claims, self.engine_rng)
+            prey_id = int(self.grid.occupancy[prey_pos[0], prey_pos[1]])
+            prey = self._find_blob(prey_id) if prey_id >= 0 else None
+            victim_energy = prey.status.energy if prey is not None else float("inf")
+
+            # Qualifying attackers: energy strictly greater than victim's energy
+            qualified = [
+                c for c in claims
+                if self._find_blob(c.blob_id) is not None
+                and self._find_blob(c.blob_id).status.energy > victim_energy  # type: ignore[union-attr]
+            ]
+
+            winner_id: int | None = None
+            if qualified:
+                max_energy = max(
+                    self._find_blob(c.blob_id).status.energy  # type: ignore[union-attr]
+                    for c in qualified
+                )
+                strongest = [
+                    c for c in qualified
+                    if self._find_blob(c.blob_id).status.energy == max_energy  # type: ignore[union-attr]
+                ]
+                if len(strongest) == 1:
+                    winner_id = strongest[0].blob_id
+                else:
+                    winner_id = self.resolver.resolve(strongest, self.engine_rng).blob_id
 
             for c in claims:
-                succeeded = c.blob_id == winner.blob_id
+                succeeded = c.blob_id == winner_id
                 attack_resolved[c.blob_id] = ResolvedAction(
                     c.blob_id, c.action, prey_pos, succeeded=succeeded,
                 )
@@ -519,11 +545,6 @@ class SimulationEngine:
         MOVE/REPRODUCE for surviving blobs only (§8.2 Option A).
         """
         # --- ATTACK-first: kill prey before MOVE reshuffles the grid ---
-        # Iterate in sorted prey-cell order (matching _resolve_attack_claims
-        # determinism, INV-2) so that mutual-predation (A↔B) resolves
-        # consistently: the predator whose prey cell sorts smallest fires first,
-        # removing that prey from the grid; the other predator then finds its
-        # prey's cell empty and skips (§8.2, §12.2).
         blob_index = {b.id: b for b in self.blobs}
         winning_attacks: list[tuple[tuple[int, int], int]] = []  # (prey_pos, blob_id)
         for blob in self.blobs:
@@ -534,29 +555,52 @@ class SimulationEngine:
         # Sort by prey position for determinism (INV-2)
         winning_attacks.sort(key=lambda x: x[0])
 
+        # Build killer_of: prey_id -> attacker_id. Grid is still intact here
+        # (no kills yet), so occupancy gives each prey's id. RESOLVE guarantees
+        # one winning attacker per prey cell (in-degree <= 1).
+        killer_of: dict[int, int] = {}
+        for prey_pos, attacker_id in winning_attacks:
+            prey_id = int(self.grid.occupancy[prey_pos[0], prey_pos[1]])
+            if prey_id >= 0:
+                killer_of[prey_id] = attacker_id
+
+        # A blob is killed iff its attacker executes; an attacker executes iff
+        # it is not itself killed. Memoized parity recursion over kill chains
+        # (no cycles — kill graph is a union of simple chains, §5.3).
+        _killed_cache: dict[int, bool] = {}
+
+        def _is_killed(x: int) -> bool:
+            if x in _killed_cache:
+                return _killed_cache[x]
+            a = killer_of.get(x)
+            result = False if a is None else not _is_killed(a)
+            _killed_cache[x] = result
+            return result
+
         killed_ids: set[int] = set()
         n_predation_deaths = 0
 
         for prey_pos, attacker_id in winning_attacks:
-            # Skip if this attacker was itself killed earlier in this loop
-            # (mutual-predation: A kills B, then B's attack on A is skipped)
-            if attacker_id in killed_ids:
-                continue
-
             blob = blob_index.get(attacker_id)
             if blob is None:
                 continue
 
-            # re-read occupancy: prey may already be gone (mutual-attack case)
+            # Attacker killed by its own winning attacker: cancel this attack
+            if _is_killed(attacker_id):
+                if attacker_id in step_data:
+                    step_data[attacker_id].action_succeeded = False
+                continue
+
+            # Defensive guard: prey may have been removed (should not happen
+            # in valid chain graphs, but guard against stale occupancy)
             prey_id = int(self.grid.occupancy[prey_pos[0], prey_pos[1]])
             if prey_id < 0:
-                # Prey already killed by an earlier attacker (sorted-cell order)
                 continue
             prey = self._find_blob(prey_id)
             if prey is None:
                 continue
 
-            # Energy transfer: predator gains min(prey.energy, headroom)
+            # Energy transfer: attacker gains min(prey.energy, headroom)
             headroom = blob.attributes.max_energy - blob.status.energy
             transfer = min(prey.status.energy, max(0.0, headroom))
             dissipate = prey.status.energy - transfer
@@ -573,8 +617,7 @@ class SimulationEngine:
             if attacker_id in step_data:
                 step_data[attacker_id].energy_gained_from_predation += transfer
 
-            # Kill prey immediately (grid.remove_blob so subsequent mutual
-            # attacks find the cell empty)
+            # Kill prey immediately so grid reflects new state
             prey.status.energy = 0.0
             prey.status.alive = False
             self.grid.remove_blob(prey.status.position)

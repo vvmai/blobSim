@@ -5,10 +5,13 @@ Full Simulation(config).run() -- public API only.
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from blobsim.blob import BlobAttributes
 from blobsim.config import SimulationConfig, SpeciesConfig
 from blobsim.environment import DecayEnvironment, RegeneratingEnvironment
+from blobsim.grid import Grid
+from blobsim.ledger import ConservationError, EnergyLedger, check_conservation
 from blobsim.simulation import Simulation
 from blobsim.species import RandomWalkerRules
 from blobsim.types import ActionType, MOORE
@@ -60,8 +63,17 @@ def test_multi_step_conservation_500_steps() -> None:
 
     result = Simulation(config).run(steps=500)
     residuals = result.recorder.conservation_residuals()
-    assert np.abs(residuals).max() < 1e-10, (
-        f"max residual = {np.abs(residuals).max()}"
+    max_residual = float(np.abs(residuals).max())
+    max_scale = max(
+        max(
+            1.0,
+            abs(ls.e_dissipated) + abs(ls.e_injected) + abs(ls.e_blobs) + abs(ls.e_grid),
+        )
+        for ls in result.recorder.ledger_records
+    )
+    max_tol = 1e-10 + 1e-12 * max_scale
+    assert max_residual < max_tol, (
+        f"max residual = {max_residual}, tol = {max_tol}"
     )
 
 
@@ -128,3 +140,25 @@ def test_eventual_decay_population_zero() -> None:
     result = Simulation(config).run(steps=500)
     final = result.recorder.ledger_records[-1]
     assert final.n_alive == 0, f"Expected 0 alive, got {final.n_alive}"
+
+
+# ---------------------------------------------------------------------------
+# Test 5: Genuine conservation violation raises ConservationError
+# ---------------------------------------------------------------------------
+
+def test_genuine_conservation_violation_raises() -> None:
+    """check_conservation raises ConservationError when whole joules are missing.
+
+    Simulates a genuine energy leak by recording a false initial_total that
+    is 100 J higher than the true system energy. The resulting delta (~100 J)
+    is orders of magnitude above the scale-aware tolerance, so ConservationError
+    must be raised. This verifies the new relative tolerance still catches
+    real bugs.
+    """
+    grid = Grid(4, {"energy": np.zeros((4, 4), dtype=np.float64)})
+
+    # initial_total is 100 J higher than the actual system energy (0 blobs, 0 grid)
+    ledger = EnergyLedger(initial_total=100.0)
+
+    with pytest.raises(ConservationError):
+        check_conservation(blobs=[], grid=grid, ledger=ledger)

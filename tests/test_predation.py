@@ -624,7 +624,10 @@ def test_prey_move_cancelled_by_predation() -> None:
 
 
 def test_prey_reproduce_cancelled_by_predation() -> None:
-    """ATTACK-first: prey that chose REPRODUCE is killed before child is born."""
+    """ATTACK-first: prey that chose REPRODUCE is killed before child is born.
+
+    Predator energy (12.0) > prey energy (10.0), so attack succeeds.
+    """
     prey_attrs = BlobAttributes.create(
         species="prey",
         max_energy=20.0,
@@ -643,7 +646,7 @@ def test_prey_reproduce_cancelled_by_predation() -> None:
 
     predator = Blob(
         blob_id=0, attributes=pred_attrs,
-        status=BlobStatus(energy=10.0, age=0, position=(5, 5)),
+        status=BlobStatus(energy=12.0, age=0, position=(5, 5)),
         rules=FixedActionRules(Action(ActionType.ATTACK, direction=(0, 1))),
         rng=make_blob_rng(0, 0),
     )
@@ -749,7 +752,12 @@ def test_killed_prey_not_charged() -> None:
 # ---------------------------------------------------------------------------
 
 def test_starving_predator_killed_after_attack_cost() -> None:
-    """Predator at exact cost; headroom=0 so gains nothing; removed by DEATH_CHECK."""
+    """Predator at exact cost with headroom=0 kills weak prey but gains nothing.
+
+    Predator energy (0.7) > prey energy (0.001) so attack succeeds, but
+    headroom=0 (max_energy=0.7) means transfer=0. After paying metabolic +
+    attack_cost the predator ends at 0 and is removed by DEATH_CHECK.
+    """
     metabolic = 0.5
     attack_cost = 0.2
     pred_energy = metabolic + attack_cost  # 0.7; max_energy = 0.7 => headroom=0
@@ -760,7 +768,7 @@ def test_starving_predator_killed_after_attack_cost() -> None:
         attack_cost=attack_cost, base_metabolic_cost=metabolic,
     )
     prey = make_prey_blob(
-        blob_id=1, position=(5, 6), energy=5.0,
+        blob_id=1, position=(5, 6), energy=0.001,
         action=Action(ActionType.IDLE), base_metabolic_cost=0.0,
     )
     engine = make_two_species_engine(predator, prey)
@@ -773,10 +781,15 @@ def test_starving_predator_killed_after_attack_cost() -> None:
 
 
 def test_starving_predator_saved_by_energy_gain() -> None:
-    """Predator barely alive; prey energy saves it from starvation."""
+    """Predator barely alive; killing weaker prey saves it from starvation.
+
+    Predator energy (5.0) > prey energy (0.3) so attack succeeds. The
+    gained energy covers metabolic + attack_cost.
+    """
     metabolic = 0.5
     attack_cost = 0.2
-    pred_energy = metabolic + attack_cost  # 0.7
+    pred_energy = 5.0
+    prey_energy = 0.3
     max_energy = 10.0
 
     predator = make_predator_blob(
@@ -785,16 +798,16 @@ def test_starving_predator_saved_by_energy_gain() -> None:
         attack_cost=attack_cost, base_metabolic_cost=metabolic,
     )
     prey = make_prey_blob(
-        blob_id=1, position=(5, 6), energy=5.0,
+        blob_id=1, position=(5, 6), energy=prey_energy,
         action=Action(ActionType.IDLE), base_metabolic_cost=0.0,
     )
     engine = make_two_species_engine(predator, prey)
     engine.step()
 
-    # headroom = 10.0 - 0.7 = 9.3; transfer = min(5.0, 9.3) = 5.0
-    # energy after = 0.7 + 5.0 - 0.5 - 0.2 = 5.0
+    # headroom = 10.0 - 5.0 = 5.0; transfer = min(0.3, 5.0) = 0.3
+    # energy after = 5.0 + 0.3 - 0.5 - 0.2 = 4.6
     assert 0 in engine._blob_index
-    assert engine.blobs[0].status.energy == pytest.approx(5.0, abs=1e-10)
+    assert engine.blobs[0].status.energy == pytest.approx(4.6, abs=1e-10)
 
 
 def test_predator_cannot_afford_attack_downgrades_to_idle() -> None:
@@ -824,7 +837,11 @@ def test_predator_cannot_afford_attack_downgrades_to_idle() -> None:
 # ---------------------------------------------------------------------------
 
 def _make_mutual_predation_engine(seed: int = 42) -> SimulationEngine:
-    """A at (5,5) attacks B at (5,6); B at (5,6) attacks A at (5,5)."""
+    """A at (5,5) attacks B at (5,6); B at (5,6) attacks A at (5,5).
+
+    A.energy (12.0) > B.energy (8.0): A's attack succeeds, B's fails.
+    A deterministically survives regardless of seed.
+    """
     def _mutual_attrs(species: str, preys_on_species: str) -> BlobAttributes:
         return BlobAttributes.create(
             species=species,
@@ -848,13 +865,13 @@ def _make_mutual_predation_engine(seed: int = 42) -> SimulationEngine:
 
     blob_a = Blob(
         blob_id=0, attributes=attrs_a,
-        status=BlobStatus(energy=10.0, age=0, position=(5, 5)),
+        status=BlobStatus(energy=12.0, age=0, position=(5, 5)),
         rules=FixedActionRules(Action(ActionType.ATTACK, direction=(0, 1))),
         rng=make_blob_rng(0, 0),
     )
     blob_b = Blob(
         blob_id=1, attributes=attrs_b,
-        status=BlobStatus(energy=10.0, age=0, position=(5, 6)),
+        status=BlobStatus(energy=8.0, age=0, position=(5, 6)),
         rules=FixedActionRules(Action(ActionType.ATTACK, direction=(0, -1))),
         rng=make_blob_rng(0, 1),
     )
@@ -862,11 +879,11 @@ def _make_mutual_predation_engine(seed: int = 42) -> SimulationEngine:
     species_configs = {
         "A": SpeciesConfig(
             rules_factory=lambda: FixedActionRules(Action(ActionType.IDLE)),
-            attributes=attrs_a, count=1, initial_energy=10.0,
+            attributes=attrs_a, count=1, initial_energy=12.0,
         ),
         "B": SpeciesConfig(
             rules_factory=lambda: FixedActionRules(Action(ActionType.IDLE)),
-            attributes=attrs_b, count=1, initial_energy=10.0,
+            attributes=attrs_b, count=1, initial_energy=8.0,
         ),
     }
     return _build_engine([blob_a, blob_b], species_configs, seed=seed)
@@ -882,16 +899,16 @@ def test_mutual_attack_one_survives() -> None:
 
 
 def test_mutual_attack_survivor_is_deterministic() -> None:
-    """Same seed -> same survivor in both runs."""
+    """A (stronger) always survives; outcome is energy-determined, not random."""
     engine1 = _make_mutual_predation_engine(seed=99)
     engine2 = _make_mutual_predation_engine(seed=99)
 
     engine1.step()
     engine2.step()
 
-    survivor1 = engine1.blobs[0].id if engine1.blobs else None
-    survivor2 = engine2.blobs[0].id if engine2.blobs else None
-    assert survivor1 == survivor2
+    # A (blob_id=0) is stronger and must always be the survivor
+    assert engine1.blobs[0].id == 0
+    assert engine2.blobs[0].id == 0
 
 
 # ---------------------------------------------------------------------------
@@ -930,3 +947,193 @@ def test_attack_direction_none_raises_validate() -> None:
 
     with pytest.raises(RulesEngineError, match="ATTACK requires a direction"):
         engine.step()
+
+
+# ---------------------------------------------------------------------------
+# §14.7 Unit Tests — Energy-Comparison Combat
+# ---------------------------------------------------------------------------
+
+def test_weak_attacker_fails_victim_survives() -> None:
+    """Attacker energy <= victim energy: attack fails, victim survives, gain=0."""
+    attack_cost = 0.2
+    metabolic = 0.5
+    pred_energy = 5.0
+    prey_energy = 8.0  # prey is stronger
+
+    predator = make_predator_blob(
+        blob_id=0, position=(5, 5), energy=pred_energy,
+        attack_direction=(0, 1), max_energy=20.0,
+        attack_cost=attack_cost, base_metabolic_cost=metabolic,
+    )
+    prey = make_prey_blob(
+        blob_id=1, position=(5, 6), energy=prey_energy,
+        action=Action(ActionType.IDLE), base_metabolic_cost=0.0,
+    )
+    engine = make_two_species_engine(predator, prey)
+    engine.step()
+
+    # Prey survives unchanged (no energy transfer)
+    assert 1 in engine._blob_index
+    assert engine._blob_index[1].status.energy == pytest.approx(prey_energy, abs=1e-10)
+    # Predator paid attack_cost + metabolic, gained 0
+    expected_pred = pred_energy - metabolic - attack_cost
+    assert engine.blobs[0].status.energy == pytest.approx(expected_pred, abs=1e-10)
+
+
+def test_equal_energy_mutual_attack_both_survive() -> None:
+    """Equal-energy A↔B mutual attack: both fail, both survive."""
+    def _mutual_attrs(species: str, preys_on_species: str) -> BlobAttributes:
+        return BlobAttributes.create(
+            species=species,
+            max_energy=20.0,
+            offspring_energy=1.0,
+            reproduction_threshold=float("inf"),
+            base_metabolic_cost=0.5,
+            move_cost=0.2,
+            reproduce_cost=0.0,
+            attack_cost=0.2,
+            observation_radius=1,
+            allowed_actions=frozenset({
+                ActionType.IDLE, ActionType.MOVE, ActionType.ATTACK,
+            }),
+            allowed_directions=MOORE,
+            preys_on=frozenset({preys_on_species}),
+        )
+
+    attrs_a = _mutual_attrs("A", "B")
+    attrs_b = _mutual_attrs("B", "A")
+
+    blob_a = Blob(
+        blob_id=0, attributes=attrs_a,
+        status=BlobStatus(energy=10.0, age=0, position=(5, 5)),
+        rules=FixedActionRules(Action(ActionType.ATTACK, direction=(0, 1))),
+        rng=make_blob_rng(0, 0),
+    )
+    blob_b = Blob(
+        blob_id=1, attributes=attrs_b,
+        status=BlobStatus(energy=10.0, age=0, position=(5, 6)),
+        rules=FixedActionRules(Action(ActionType.ATTACK, direction=(0, -1))),
+        rng=make_blob_rng(0, 1),
+    )
+    species_configs = {
+        "A": SpeciesConfig(
+            rules_factory=lambda: FixedActionRules(Action(ActionType.IDLE)),
+            attributes=attrs_a, count=1, initial_energy=10.0,
+        ),
+        "B": SpeciesConfig(
+            rules_factory=lambda: FixedActionRules(Action(ActionType.IDLE)),
+            attributes=attrs_b, count=1, initial_energy=10.0,
+        ),
+    }
+    engine = _build_engine([blob_a, blob_b], species_configs, seed=42)
+    engine.step()
+
+    # Both blobs survive (equal energy → both attacks fail)
+    assert len(engine.blobs) == 2
+    assert 0 in engine._blob_index
+    assert 1 in engine._blob_index
+
+
+def test_three_attackers_strongest_wins() -> None:
+    """Three attackers of differing energy on one prey: strongest wins, others fail.
+
+    Predator energies: A=15.0, B=12.0, C=8.0; prey energy=5.0.
+    All three qualify (all > 5.0). A wins (highest energy).
+    B and C fail and each paid attack_cost.
+    """
+    prey_pos = (5, 6)
+    pred_positions = [(5, 5), (4, 6), (6, 6)]
+    attack_dirs = [(0, 1), (1, 0), (-1, 0)]
+    pred_energies = [15.0, 12.0, 8.0]
+
+    pred_attrs = _pred_attrs(attack_cost=0.2, base_metabolic_cost=0.5)
+    prey_attrs = _prey_attrs(base_metabolic_cost=0.0)
+
+    blobs: list[Blob] = []
+    for i, (pos, direction, energy) in enumerate(
+        zip(pred_positions, attack_dirs, pred_energies)
+    ):
+        blobs.append(Blob(
+            blob_id=i,
+            attributes=pred_attrs,
+            status=BlobStatus(energy=energy, age=0, position=pos),
+            rules=FixedActionRules(Action(ActionType.ATTACK, direction=direction)),
+            rng=make_blob_rng(0, i),
+        ))
+    prey_id = 3
+    blobs.append(Blob(
+        blob_id=prey_id,
+        attributes=prey_attrs,
+        status=BlobStatus(energy=5.0, age=0, position=prey_pos),
+        rules=FixedActionRules(Action(ActionType.IDLE)),
+        rng=make_blob_rng(0, prey_id),
+    ))
+
+    species_configs = {
+        "predator": SpeciesConfig(
+            rules_factory=lambda: FixedActionRules(Action(ActionType.IDLE)),
+            attributes=pred_attrs, count=3, initial_energy=10.0,
+        ),
+        "prey": SpeciesConfig(
+            rules_factory=lambda: FixedActionRules(Action(ActionType.IDLE)),
+            attributes=prey_attrs, count=1, initial_energy=5.0,
+        ),
+    }
+    engine = _build_engine(blobs, species_configs, seed=42)
+    engine.step()
+
+    # Prey dead
+    assert prey_id not in engine._blob_index
+
+    # A (blob_id=0, energy=15.0) won — gained prey energy
+    # B and C failed: paid 0.5 + 0.2 = 0.7 each, started at 12.0 and 8.0
+    survivors = {b.id: b for b in engine.blobs}
+    assert 0 in survivors  # A survived
+    # B: 12.0 - 0.7 = 11.3 (failed attack, no gain)
+    assert survivors[1].status.energy == pytest.approx(11.3, abs=1e-10)
+    # C: 8.0 - 0.7 = 7.3 (failed attack, no gain)
+    assert survivors[2].status.energy == pytest.approx(7.3, abs=1e-10)
+
+
+def test_failed_attack_conservation() -> None:
+    """Energy conservation holds across a failed attack (attacker weaker than prey)."""
+    predator = make_predator_blob(
+        blob_id=0, position=(5, 5), energy=3.0,
+        attack_direction=(0, 1), max_energy=20.0,
+        attack_cost=0.2, base_metabolic_cost=0.5,
+    )
+    prey = make_prey_blob(
+        blob_id=1, position=(5, 6), energy=8.0,
+        action=Action(ActionType.IDLE), base_metabolic_cost=0.3,
+    )
+    engine = make_two_species_engine(predator, prey)
+    engine.step()
+
+    check_conservation(engine.blobs, engine.grid, engine.ledger)
+    e_blobs = sum(b.status.energy for b in engine.blobs)
+    e_grid = float(engine.grid.energy.sum())
+    e_dissipated = engine.ledger.dissipated
+    e_injected = engine.ledger.injected
+    residual = abs(
+        engine.ledger.initial_total - e_blobs - e_grid - e_dissipated + e_injected
+    )
+    scale = max(1.0, abs(e_dissipated) + abs(e_injected) + abs(e_blobs) + abs(e_grid))
+    tol = 1e-10 + 1e-12 * scale
+    assert residual < tol
+
+
+def test_mutual_stronger_kills_weaker_deterministic() -> None:
+    """A (energy=12.0) > B (energy=8.0): A always kills B, run twice same seed."""
+    engine1 = _make_mutual_predation_engine(seed=7)
+    engine2 = _make_mutual_predation_engine(seed=7)
+
+    engine1.step()
+    engine2.step()
+
+    # A (blob_id=0) is the stronger blob and must survive in both runs
+    assert len(engine1.blobs) == 1
+    assert len(engine2.blobs) == 1
+    assert engine1.blobs[0].id == 0
+    assert engine2.blobs[0].id == 0
+    check_conservation(engine1.blobs, engine1.grid, engine1.ledger)
+    check_conservation(engine2.blobs, engine2.grid, engine2.ledger)

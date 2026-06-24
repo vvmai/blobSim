@@ -200,11 +200,19 @@ def test_lotka_volterra_cycle() -> None:
         "All populations went extinct"
     )
 
-    # 2. Conservation residuals near zero
+    # 2. Conservation residuals near zero — tolerance scales with throughput.
     residuals = recorder.conservation_residuals()
     max_residual = float(np.max(np.abs(residuals)))
-    assert max_residual < 1e-10, (
-        f"Conservation violated: max residual = {max_residual}"
+    max_scale = max(
+        max(
+            1.0,
+            abs(ls.e_dissipated) + abs(ls.e_injected) + abs(ls.e_blobs) + abs(ls.e_grid),
+        )
+        for ls in recorder.ledger_records
+    )
+    max_tol = 1e-10 + 1e-12 * max_scale
+    assert max_residual < max_tol, (
+        f"Conservation violated: max residual = {max_residual}, tol = {max_tol}"
     )
 
     # 3. Prey population should vary (not monotone collapse)

@@ -26,7 +26,8 @@ SEED = 42
 
 
 def _generate(name: str, sim: Simulation, steps: int, **kwargs) -> Path:
-    """Run simulation and render GIF."""
+    """Run simulation and render GIF (cell-fill style by default)."""
+    kwargs.setdefault("cell_fill", True)
     t0 = time.perf_counter()
     result = sim.run(steps)
     t_sim = time.perf_counter() - t0
