@@ -66,6 +66,23 @@ _ABS_TOL: float = 1e-10
 _REL_TOL: float = 1e-12
 
 
+def conservation_tolerance(
+    e_blobs: float,
+    e_grid: float,
+    e_dissipated: float,
+    e_injected: float,
+) -> float:
+    """Per-step conservation tolerance: ABS_TOL + REL_TOL * throughput scale.
+
+    Single source of truth for the INV-1 tolerance, shared by
+    check_conservation and any diagnostics that plot the threshold.
+    """
+    scale = max(
+        1.0, abs(e_dissipated) + abs(e_injected) + abs(e_blobs) + abs(e_grid)
+    )
+    return _ABS_TOL + _REL_TOL * scale
+
+
 def check_conservation(
     blobs: Iterable[Blob],
     grid: Grid,
@@ -97,11 +114,10 @@ def check_conservation(
     e_injected = ledger.injected
     lhs = e_blobs + e_grid + e_dissipated - e_injected
     delta = lhs - ledger.initial_total
-    scale = max(1.0, abs(e_dissipated) + abs(e_injected) + abs(e_blobs) + abs(e_grid))
-    tol = _ABS_TOL + _REL_TOL * scale
+    tol = conservation_tolerance(e_blobs, e_grid, e_dissipated, e_injected)
     if abs(delta) > tol:
         raise ConservationError(
-            f"Conservation violated: delta={delta:.6e}, tol={tol:.6e}, scale={scale:.6e}, "
+            f"Conservation violated: delta={delta:.6e}, tol={tol:.6e}, "
             f"E_blobs={e_blobs}, E_grid={e_grid}, "
             f"dissipated={e_dissipated}, injected={e_injected}"
         )

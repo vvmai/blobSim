@@ -119,7 +119,7 @@ A failed attack (attacker.energy <= victim.energy, or lost energy tie-break):
 
 | ID | Invariant | Check |
 |---|---|---|
-| INV-1 | Energy conservation: `E_blobs + E_grid + dissipated - injected == initial_total` | `check_conservation` after every step; residual < 1e-10 |
+| INV-1 | Energy conservation: `E_blobs + E_grid + dissipated - injected == initial_total` | `check_conservation` after every step; residual < `conservation_tolerance` (= `1e-10 + 1e-12 * throughput`, scales with accumulated energy so long runs don't trip on roundoff) |
 | INV-2 | Determinism: same seed → identical survivor set | Prey cells sorted; RNG consumed in fixed order |
 | INV-3 | One blob per cell | `check_one_per_cell` after every step |
 

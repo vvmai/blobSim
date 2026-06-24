@@ -22,7 +22,7 @@ from blobsim.blob import Blob, BlobAttributes, BlobStatus  # noqa: E402
 from blobsim.config import SimulationConfig, SpeciesConfig  # noqa: E402
 from blobsim.environment import RegeneratingEnvironment  # noqa: E402
 from blobsim.grid import Grid  # noqa: E402
-from blobsim.ledger import EnergyLedger  # noqa: E402
+from blobsim.ledger import EnergyLedger, conservation_tolerance  # noqa: E402
 from blobsim.observability import StateRecorder  # noqa: E402
 from blobsim.engine import SimulationEngine  # noqa: E402
 from blobsim.conflict import RandomResolver  # noqa: E402
@@ -175,7 +175,11 @@ def _metrics(rec, gs, title, path):
     ax[1, 0].plot(A, B, lw=0.6, color="k"); ax[1, 0].scatter(A[0], B[0], c="g", s=30, zorder=3)
     ax[1, 0].set_title("phase portrait A vs B"); ax[1, 0].set_xlabel("A"); ax[1, 0].set_ylabel("B")
     ax[1, 1].semilogy(steps, np.clip(resid, 1e-16, None), color="#9467bd")
-    ax[1, 1].axhline(1e-10, color="r", ls=":", lw=1, label="INV-1 tol")
+    tol = np.array([
+        conservation_tolerance(ls.e_blobs, ls.e_grid, ls.e_dissipated, ls.e_injected)
+        for ls in rec.ledger_records
+    ])
+    ax[1, 1].plot(steps, tol, color="r", ls=":", lw=1, label="INV-1 tol")
     ax[1, 1].set_title("|conservation residual|"); ax[1, 1].set_xlabel("step"); ax[1, 1].legend(fontsize=8)
     fig.tight_layout(rect=(0, 0, 1, 0.96)); fig.savefig(path, dpi=90); plt.close(fig)
 

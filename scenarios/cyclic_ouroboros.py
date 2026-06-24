@@ -19,7 +19,7 @@ import numpy as np  # noqa: E402
 
 from blobsim.config import SimulationConfig, SpeciesConfig  # noqa: E402
 from blobsim.environment import RegeneratingEnvironment  # noqa: E402
-from blobsim.ledger import ConservationError  # noqa: E402
+from blobsim.ledger import ConservationError, conservation_tolerance  # noqa: E402
 from blobsim.rendering import render_gif  # noqa: E402
 from blobsim.simulation import Simulation  # noqa: E402
 
@@ -117,7 +117,11 @@ def _metrics(rec, title, path, lags):
                   ha="center", va="center", fontsize=12, transform=ax[1, 0].transAxes)
     ax[1, 0].axis("off")
     ax[1, 1].semilogy(steps, np.clip(resid, 1e-16, None), color="#9467bd")
-    ax[1, 1].axhline(1e-10, color="r", ls=":", lw=1, label="INV-1 tol")
+    tol = np.array([
+        conservation_tolerance(ls.e_blobs, ls.e_grid, ls.e_dissipated, ls.e_injected)
+        for ls in rec.ledger_records
+    ])
+    ax[1, 1].plot(steps, tol, color="r", ls=":", lw=1, label="INV-1 tol")
     ax[1, 1].set_title("|conservation residual|"); ax[1, 1].set_xlabel("step")
     ax[1, 1].legend(fontsize=8)
     fig.tight_layout(rect=(0, 0, 1, 0.96)); fig.savefig(path, dpi=90); plt.close(fig)
